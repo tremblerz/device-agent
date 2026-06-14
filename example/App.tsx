@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { MODEL } from './src/config';
+import { BluetoothPanel } from './src/BluetoothPanel';
 import { useAgent, type UIMessage } from './src/useAgent';
 
 export default function App() {
@@ -40,6 +41,7 @@ export default function App() {
         <Text style={styles.title}>Device Agent</Text>
         <Text style={styles.subtitle}>{statusLabel(status)}</Text>
       </View>
+      <BluetoothPanel />
 
       {!ready ? (
         <Gate status={status} progress={progress} error={error} onStart={initialize} />

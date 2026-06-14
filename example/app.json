@@ -9,16 +9,19 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "ai.deviceagent.example",
-      "infoPlist": {
+      "bundleIdentifier": "com.viktorosadsky.deviceagentexample",
+        "infoPlist": {
         "NSContactsUsageDescription": "Lets the on-device agent look up your contacts when you ask it to.",
         "NSCalendarsUsageDescription": "Lets the on-device agent read and create calendar events when you ask it to.",
         "NSCalendarsFullAccessUsageDescription": "Lets the on-device agent read and create calendar events when you ask it to.",
-        "NSLocationWhenInUseUsageDescription": "Lets the on-device agent answer questions about your current location."
+        "NSLocationWhenInUseUsageDescription": "Lets the on-device agent answer questions about your current location.",
+        "NSBluetoothAlwaysUsageDescription": "Lets the app discover and connect to nearby phones over Bluetooth.",
+        "NSBluetoothPeripheralUsageDescription": "Lets the app advertise itself and receive Bluetooth messages from nearby phones.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "ai.deviceagent.example",
+      "package": "com.viktorosadsky.deviceagentexample",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -31,7 +34,14 @@
         "android.permission.READ_CALENDAR",
         "android.permission.WRITE_CALENDAR",
         "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.POST_NOTIFICATIONS"
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_ADVERTISE",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.WRITE_CONTACTS",
+        "android.permission.ACCESS_COARSE_LOCATION"
       ]
     },
     "web": {
@@ -62,6 +72,11 @@
       "expo-contacts",
       "expo-calendar",
       "expo-location"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f0248592-4239-4633-a3c8-ea8bbed96012"
+      }
+    }
   }
 }
