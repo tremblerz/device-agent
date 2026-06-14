@@ -12,6 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import * as Speech from 'expo-speech';
 import { StatusBar } from 'expo-status-bar';
 import { MODEL } from './src/config';
 import { useCounsel, type FeedItem } from './src/useCounsel';
@@ -252,12 +253,59 @@ function SessionScreen({
   localParty: Party;
 }) {
   const listRef = useRef<FlatList<FeedItem>>(null);
+  const [speechOn, setSpeechOn] = useState(false);
+  const speechCursorRef = useRef(0);
+
   useEffect(() => {
     listRef.current?.scrollToEnd({ animated: true });
   }, [c.feed, c.thinking]);
 
+  useEffect(() => {
+    if (!speechOn) return;
+
+    const newMessages = c.feed.slice(speechCursorRef.current).filter((item) => item.type === 'message');
+    speechCursorRef.current = c.feed.length;
+
+    if (newMessages.length === 0) return;
+
+    const text = newMessages.map((item) => item.text).join('. ');
+    Speech.stop();
+    Speech.speak(text, { language: 'en-US' });
+  }, [c.feed, speechOn]);
+
+  useEffect(
+    () => () => {
+      Speech.stop();
+    },
+    [],
+  );
+
   return (
     <View style={styles.flex}>
+      {Platform.OS === 'ios' && (
+        <View style={styles.speakerBar}>
+          <Pressable
+            style={[styles.speakerBtn, speechOn ? styles.speakerBtnOn : styles.speakerBtnOff]}
+            onPress={() => {
+              if (speechOn) {
+                Speech.stop();
+                setSpeechOn(false);
+                return;
+              }
+
+              speechCursorRef.current = c.feed.length;
+              setSpeechOn(true);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={speechOn ? 'Stop reading messages' : 'Read new messages aloud'}
+          >
+            <View style={styles.speakerIcon}>
+              <Text style={styles.speakerGlyph}>🔊</Text>
+              {!speechOn && <View style={styles.speakerSlash} />}
+            </View>
+          </Pressable>
+        </View>
+      )}
       <FlatList
         ref={listRef}
         style={styles.flex}
@@ -521,6 +569,32 @@ const styles = StyleSheet.create({
   noteRow: { alignSelf: 'center', paddingVertical: 4 },
   noteText: { fontSize: 12, color: '#94a3b8', fontStyle: 'italic' },
 
+  speakerBar: {
+    backgroundColor: '#fff',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e2e8f0',
+    padding: 10,
+    alignItems: 'flex-end',
+  },
+  speakerBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  speakerBtnOff: { backgroundColor: '#f8fafc', borderColor: '#cbd5e1' },
+  speakerBtnOn: { backgroundColor: '#dbeafe', borderColor: '#93c5fd' },
+  speakerIcon: { width: 22, height: 22, alignItems: 'center', justifyContent: 'center' },
+  speakerGlyph: { fontSize: 18, lineHeight: 20, color: '#0f172a' },
+  speakerSlash: {
+    position: 'absolute',
+    width: 26,
+    height: 2,
+    backgroundColor: '#dc2626',
+    transform: [{ rotate: '-45deg' }],
+  },
   addBar: { backgroundColor: '#fff', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#e2e8f0', padding: 10 },
   addBtn: { backgroundColor: '#eef2ff', borderRadius: 12, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: '#c7d2fe' },
   addBtnText: { color: '#4338ca', fontSize: 15, fontWeight: '600' },
