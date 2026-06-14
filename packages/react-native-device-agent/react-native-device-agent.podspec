@@ -15,5 +15,4 @@ Pod::Spec.new do |s|
   s.source_files = "ios/**/*.{swift,h,m}"
   s.swift_version = "5.0"
   s.dependency "React-Core"
-  s.dependency "React-RCTEventEmitter"
 end
