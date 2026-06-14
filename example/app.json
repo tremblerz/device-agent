@@ -61,7 +61,15 @@
       "expo-notifications",
       "expo-contacts",
       "expo-calendar",
-      "expo-location"
+      "expo-location",
+      [
+        "expo-nearby-connections",
+        {
+          "bonjourServicesName": "device-counsel",
+          "localNetworkUsagePermissionText": "Connects directly to the other person's device to mediate, with no internet involved.",
+          "bluetoothUsagePermissionText": "Connects directly to the other person's device over Bluetooth to mediate privately."
+        }
+      ]
     ]
   }
 }

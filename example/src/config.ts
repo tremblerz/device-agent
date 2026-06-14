@@ -11,8 +11,9 @@ export const MODEL = {
   fileName: 'Qwen2.5-1.5B-Instruct-Q4_K_M.gguf',
   /** Approx download size, for the UI. */
   sizeLabel: '~1.1 GB',
-  /** Context window. */
-  nCtx: 4096,
+  /** Context window. Larger = more headroom for long chats (costs upfront RAM,
+   *  not per-turn speed); the agent trims old turns when this fills up. */
+  nCtx: 8192,
 };
 
 export const SYSTEM_PROMPT =

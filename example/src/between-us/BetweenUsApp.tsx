@@ -1,11 +1,3 @@
-/**
- * BetweenUsApp — root component for the Between Us mediation flow.
- *
- * Mount this instead of (or alongside) the existing DeviceAgent App.
- * All navigation is internal state — no react-navigation dependency needed.
- *
- * Placeholder data is used throughout; wire real agent calls where noted.
- */
 import React, { useCallback, useRef, useState } from 'react';
 import {
   Animated,
@@ -18,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { warmColors } from './warmColors';
-import type { IntakeAnswer, PersonId, Screen, SessionContext } from './types';
+import type { AgentMove, DebriefInsight, IntakeAnswer, PersonId, Screen, SessionContext, VerdictResult } from './types';
 
 import { Screen0a } from './screens/Screen0a';
 import { Screen0b } from './screens/Screen0b';
@@ -26,11 +18,10 @@ import { Screen1 } from './screens/Screen1';
 import { Screen2 } from './screens/Screen2';
 import { Screen3, MOCK_INSIGHT } from './screens/Screen3';
 import { Screen4, MOCK_VERDICT } from './screens/Screen4';
+import { ModelLoader } from './agent/ModelLoader';
+import { betweenUsAgent } from './agent/BetweenUsAgent';
+import { useBetweenUsBluetooth } from './bluetooth/useBetweenUsBluetooth';
 
-/**
- * On a real device, derive the opening screen from a deep-link or push
- * notification. For now, users pick their role from a minimal landing.
- */
 function Landing({ onHost, onJoin }: { onHost: () => void; onJoin: () => void }) {
   return (
     <View style={landingStyles.screen}>
@@ -81,21 +72,41 @@ const landingStyles = StyleSheet.create({
   ghostLabel: { fontSize: 15, fontWeight: '500', color: warmColors.accentA },
 });
 
-type AnyScreen = Screen | 'landing';
+type AnyScreen = Screen | 'landing' | 'loading';
 
 export function BetweenUsApp() {
-  const [screen, setScreen] = useState<AnyScreen>('landing');
-  // Derived from the flow taken: host → 'A', joiner → 'B'. Never shown to users.
+  const [screen, setScreen] = useState<AnyScreen>('loading');
   const [personId, setPersonId] = useState<PersonId>('A');
-  const [_sessionCtx, setSessionCtx] = useState<SessionContext | null>(null);
-  const [_intakeAnswers, setIntakeAnswers] = useState<IntakeAnswer | null>(null);
+  const [sessionCtx, setSessionCtx] = useState<SessionContext | null>(null);
+  const [intakeAnswers, setIntakeAnswers] = useState<IntakeAnswer | null>(null);
+  const [moves, setMoves] = useState<AgentMove[]>([]);
+  const [debrief, setDebrief] = useState<DebriefInsight>(MOCK_INSIGHT);
+  const [verdict, setVerdict] = useState<VerdictResult>(MOCK_VERDICT);
   const [_round, setRound] = useState(1);
+  const [peerId, setPeerId] = useState<string | null>(null);
 
-  // Simulate the other person being ready — flip these to wire real sync
-  const [otherPersonDebriefReady] = useState(true);
+  const [otherPersonDebriefReady, setOtherPersonDebriefReady] = useState(false);
   const [otherPersonAccepted, setOtherPersonAccepted] = useState(false);
 
-  // Shared fade value for all screen transitions
+  const bt = useBetweenUsBluetooth({
+    // Host: joiner connected → send them the session context
+    onPeerJoined: async (id) => {
+      setPeerId(id);
+      if (sessionCtx) await bt.sendContext(id, sessionCtx);
+    },
+    // Joiner: received context from host → move to intake
+    onContextReceived: (ctx) => {
+      setSessionCtx(ctx);
+      navigate('intake');
+    },
+    // Both: incoming agent move → add to moves list
+    onMoveReceived: (move) => {
+      setMoves((prev) => [...prev, move]);
+    },
+    // Both: other person accepted the verdict
+    onPeerAccepted: () => setOtherPersonAccepted(true),
+  });
+
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const transitioning = useRef(false);
 
@@ -103,7 +114,6 @@ export function BetweenUsApp() {
     (next: AnyScreen) => {
       if (transitioning.current) return;
       transitioning.current = true;
-
       Animated.timing(fadeAnim, {
         toValue: 0,
         duration: 200,
@@ -129,6 +139,16 @@ export function BetweenUsApp() {
       <StatusBar barStyle="dark-content" backgroundColor={warmColors.bgPrimary} />
 
       <Animated.View style={[styles.fill, { opacity: fadeAnim }]}>
+
+        {screen === 'loading' && (
+          <ModelLoader
+            onReady={async (engine) => {
+              await betweenUsAgent.load(engine);
+              navigate('landing');
+            }}
+          />
+        )}
+
         {screen === 'landing' && (
           <Landing
             onHost={() => navigate('host')}
@@ -138,9 +158,11 @@ export function BetweenUsApp() {
 
         {screen === 'host' && (
           <Screen0a
-            onSessionReady={(ctx) => {
+            onSessionReady={async (ctx) => {
               setPersonId('A');
               setSessionCtx(ctx);
+              // Advertise over Bluetooth so the joiner can find us
+              await bt.startHosting(ctx);
               navigate('intake');
             }}
           />
@@ -148,7 +170,17 @@ export function BetweenUsApp() {
 
         {screen === 'join' && (
           <Screen0b
+            peers={bt.peers}
+            btRunning={bt.running}
+            onStartScan={async (name) => bt.startScanning(name)}
+            onJoinPeer={async (id) => {
+              setPeerId(id);
+              await bt.joinHost(id);
+              setPersonId('B');
+              // Context arrives via onContextReceived → navigate('intake')
+            }}
             onJoin={(ctx) => {
+              // Fallback for manual/mock join without Bluetooth
               setPersonId('B');
               setSessionCtx(ctx);
               navigate('intake');
@@ -159,8 +191,14 @@ export function BetweenUsApp() {
 
         {screen === 'intake' && (
           <Screen1
-            onComplete={(answers) => {
+            agent={betweenUsAgent}
+            sessionCtx={sessionCtx}
+            onComplete={async (answers) => {
               setIntakeAnswers(answers);
+              if (sessionCtx) {
+                betweenUsAgent.setContext(sessionCtx, answers, personId);
+              }
+              setOtherPersonDebriefReady(false);
               navigate('negotiation');
             }}
           />
@@ -169,8 +207,18 @@ export function BetweenUsApp() {
         {screen === 'negotiation' && (
           <Screen2
             personId={personId}
-            onRoundComplete={(r) => {
+            agent={betweenUsAgent}
+            incomingMoves={moves}
+            onSendMove={async (move) => {
+              if (peerId) await bt.sendMove(peerId, move);
+              setMoves((prev) => [...prev, move]);
+            }}
+            onRoundComplete={async (r, roundMoves) => {
               setRound(r);
+              setMoves(roundMoves);
+              const insight = await betweenUsAgent.generateDebrief(roundMoves);
+              setDebrief(insight);
+              setOtherPersonDebriefReady(true);
               navigate('debrief');
             }}
           />
@@ -178,9 +226,11 @@ export function BetweenUsApp() {
 
         {screen === 'debrief' && (
           <Screen3
-            insight={MOCK_INSIGHT}
+            insight={debrief}
             otherPersonReady={otherPersonDebriefReady}
-            onNextRound={(_followUp) => {
+            onNextRound={async (_followUp) => {
+              const v = await betweenUsAgent.generateVerdict(moves);
+              setVerdict(v);
               navigate('verdict');
             }}
           />
@@ -188,15 +238,18 @@ export function BetweenUsApp() {
 
         {screen === 'verdict' && (
           <Screen4
-            verdict={MOCK_VERDICT}
+            verdict={verdict}
             personId={personId}
             otherPersonAccepted={otherPersonAccepted}
-            onAccept={() => {
-              setTimeout(() => setOtherPersonAccepted(true), 2500);
+            onAccept={async () => {
+              if (peerId) await bt.sendAccepted(peerId);
+              // Demo fallback: simulate other side accepting after a delay
+              if (!peerId) setTimeout(() => setOtherPersonAccepted(true), 2500);
             }}
             onDispute={() => navigate('debrief')}
           />
         )}
+
       </Animated.View>
     </SafeAreaView>
   );

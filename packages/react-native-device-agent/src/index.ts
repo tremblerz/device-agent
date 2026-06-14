@@ -13,6 +13,16 @@ export type { LlamaLoadOptions, ChatOptions, ChatResult } from './llama';
 
 export { ToolRegistry } from './toolRegistry';
 export { defineTool } from './defineTool';
+export {
+  bluetoothBridge,
+  BluetoothBridge,
+  useBluetoothExchange,
+  type BluetoothExchangeState,
+  type BluetoothConnectionSummary,
+  type BluetoothMessage,
+  type BluetoothPeer,
+  type BluetoothStartOptions,
+} from './bluetooth';
 
 export {
   createBuiltinTools,

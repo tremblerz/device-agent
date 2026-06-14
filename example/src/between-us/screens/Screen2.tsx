@@ -11,10 +11,14 @@ import { warmColors } from '../warmColors';
 import { Wordmark } from '../components/Wordmark';
 import { PhasePill } from '../components/PhasePill';
 import type { AgentMove, PersonId } from '../types';
+import type { BetweenUsAgent } from '../agent/BetweenUsAgent';
 
 interface Props {
   personId: PersonId;
-  onRoundComplete: (round: number) => void;
+  agent?: BetweenUsAgent;
+  incomingMoves?: AgentMove[];
+  onSendMove?: (move: AgentMove) => Promise<void>;
+  onRoundComplete: (round: number, moves: AgentMove[]) => void;
 }
 
 // Placeholder moves — replace with real agent exchange
@@ -216,10 +220,33 @@ const bubbleStyles = StyleSheet.create({
   },
 });
 
-export function Screen2({ personId, onRoundComplete }: Props) {
+export function Screen2({ personId, agent, incomingMoves, onSendMove, onRoundComplete }: Props) {
+  const [moves, setMoves] = useState<AgentMove[]>(MOCK_MOVES);
   const [visibleCount, setVisibleCount] = useState(0);
   const [round, setRound] = useState(1);
   const [roundComplete, setRoundComplete] = useState(false);
+
+  // Merge in moves received from the other person via Bluetooth
+  useEffect(() => {
+    if (!incomingMoves?.length) return;
+    setMoves((prev) => {
+      const ids = new Set(prev.map((m) => m.timestamp + m.agentId));
+      const newOnes = incomingMoves.filter((m) => !ids.has(m.timestamp + m.agentId));
+      return newOnes.length ? [...prev, ...newOnes] : prev;
+    });
+  }, [incomingMoves]);
+
+  // Generate real move and broadcast it when agent is ready
+  useEffect(() => {
+    if (!agent?.ready) return;
+    agent.generateMove(1).then(async (move) => {
+      if (onSendMove) await onSendMove(move);
+      setMoves((prev) => [
+        move,
+        ...prev.filter((m) => m.agentId !== personId),
+      ]);
+    });
+  }, []);
 
   const roundCardTranslate = useRef(new Animated.Value(40)).current;
   const roundCardOpacity = useRef(new Animated.Value(0)).current;
@@ -233,7 +260,7 @@ export function Screen2({ personId, onRoundComplete }: Props) {
 
   // Trickle in moves one at a time
   useEffect(() => {
-    if (visibleCount >= MOCK_MOVES.length) {
+    if (visibleCount >= moves.length) {
       // Round complete sequence
       setTimeout(() => {
         // Fade out redacted blocks
@@ -260,7 +287,7 @@ export function Screen2({ personId, onRoundComplete }: Props) {
               useNativeDriver: true,
             }),
           ]).start(() => {
-            setTimeout(() => onRoundComplete(round), 1500);
+            setTimeout(() => onRoundComplete(round, moves), 1500);
           });
         }, 500);
       }, 1200);
@@ -307,7 +334,7 @@ export function Screen2({ personId, onRoundComplete }: Props) {
         contentContainerStyle={styles.thread}
         showsVerticalScrollIndicator={false}
       >
-        {MOCK_MOVES.map((move, i) => (
+        {moves.map((move, i) => (
           <Animated.View
             key={i}
             style={
@@ -320,7 +347,7 @@ export function Screen2({ personId, onRoundComplete }: Props) {
           </Animated.View>
         ))}
 
-        {visibleCount > 0 && visibleCount < MOCK_MOVES.length && (
+        {visibleCount > 0 && visibleCount < moves.length && (
           <View style={styles.typingRow}>
             <Avatar isOwn={false} />
             <TypingDots />

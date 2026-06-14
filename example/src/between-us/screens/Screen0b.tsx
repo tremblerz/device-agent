@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Animated,
+  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,27 +15,40 @@ import { DisplayTitle } from '../components/DisplayTitle';
 import { WarmButton } from '../components/WarmButton';
 import type { SessionContext } from '../types';
 
+interface BTPeer {
+  id: string;
+  name: string | null;
+  connected: boolean;
+}
+
 interface Props {
   onJoin: (ctx: SessionContext) => void;
   onDecline: () => void;
+  peers?: BTPeer[];
+  btRunning?: boolean;
+  onStartScan?: (name: string) => Promise<void>;
+  onJoinPeer?: (peerId: string) => Promise<void>;
 }
 
-// Simulated decoded context from QR scan
-const MOCK_SCANNED_CONTEXT: SessionContext = {
-  situation: 'a deadline that is not working for both of us',
-  conversationType: 'Workplace',
-  desiredOutcome: 'something we both feel okay about',
-};
-
-export function Screen0b({ onJoin, onDecline }: Props) {
+export function Screen0b({ onJoin, onDecline, peers = [], btRunning = false, onStartScan, onJoinPeer }: Props) {
   const [name, setName] = useState('');
-  const [scanned, setScanned] = useState(false);
-  const [scannedCtx, setScannedCtx] = useState<SessionContext | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [joiningId, setJoiningId] = useState<string | null>(null);
 
-  const handleScan = () => {
-    // In real implementation, open camera + parse QR
-    setScannedCtx(MOCK_SCANNED_CONTEXT);
-    setScanned(true);
+  // Filter to peers that look like Between Us hosts (display name starts with "BU:")
+  const buPeers = peers.filter((p) => p.name?.startsWith('BU:'));
+
+  const handleStartScan = async () => {
+    if (!name.trim() || !onStartScan) return;
+    setScanning(true);
+    await onStartScan(name.trim());
+  };
+
+  const handleJoinPeer = async (id: string) => {
+    if (!onJoinPeer) return;
+    setJoiningId(id);
+    await onJoinPeer(id);
+    // Navigation happens via onContextReceived in BetweenUsApp
   };
 
   return (
@@ -53,45 +66,7 @@ export function Screen0b({ onJoin, onDecline }: Props) {
       <DisplayTitle>Someone invited you</DisplayTitle>
       <View style={styles.gap8} />
       <Text style={styles.subtitle}>
-        Scan their code and your agent will know what you're here to work through.
-      </Text>
-
-      <View style={styles.gap28} />
-
-      {!scanned ? (
-        <>
-          <TouchableOpacity style={styles.viewfinder} onPress={handleScan} activeOpacity={0.8}>
-            <View style={styles.scanIcon}>
-              <Text style={styles.scanIconText}>⊡</Text>
-            </View>
-            <Text style={styles.scanHint}>tap to scan</Text>
-          </TouchableOpacity>
-        </>
-      ) : (
-        <View style={styles.contextCard}>
-          <Text style={styles.contextLabel}>your agent knows the context</Text>
-          <View style={styles.gap10} />
-          <Text style={styles.contextBody}>
-            You're here to work through a{' '}
-            <Text style={styles.contextEmphasis}>
-              {scannedCtx?.conversationType?.toLowerCase()}
-            </Text>{' '}
-            conversation.
-          </Text>
-          <View style={styles.gap6} />
-          <Text style={styles.contextBody}>
-            The situation: {scannedCtx?.situation}.
-          </Text>
-          <View style={styles.gap6} />
-          <Text style={styles.contextBody}>
-            The goal: {scannedCtx?.desiredOutcome}.
-          </Text>
-        </View>
-      )}
-
-      <View style={styles.gap20} />
-      <Text style={styles.noteText}>
-        Your side of things stays with you — your agent will ask you about it next.
+        Enter your name, then tap Scan to find them nearby over Bluetooth.
       </Text>
 
       <View style={styles.gap28} />
@@ -109,12 +84,59 @@ export function Screen0b({ onJoin, onDecline }: Props) {
       />
       <View style={styles.gap20} />
 
-      <WarmButton
-        label="I'm in — let's go"
-        disabled={!scanned || !name.trim()}
-        onPress={() => scannedCtx && onJoin({ ...scannedCtx, name })}
-      />
-      <View style={styles.gap12} />
+      {!btRunning ? (
+        <WarmButton
+          label="scan for nearby sessions"
+          disabled={!name.trim()}
+          onPress={handleStartScan}
+        />
+      ) : (
+        <>
+          <View style={styles.scanningRow}>
+            <ActivityIndicator size="small" color={warmColors.accentB} />
+            <Text style={styles.scanningText}>looking for nearby sessions…</Text>
+          </View>
+
+          {buPeers.length === 0 ? (
+            <View style={styles.emptyPeers}>
+              <Text style={styles.emptyText}>no sessions found yet — ask them to open the app</Text>
+            </View>
+          ) : (
+            <View style={styles.peerList}>
+              {buPeers.map((p) => {
+                const hostName = p.name?.replace('BU:', '') ?? 'unknown';
+                return (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={[styles.peerRow, joiningId === p.id && styles.peerRowActive]}
+                    onPress={() => handleJoinPeer(p.id)}
+                    activeOpacity={0.8}
+                    disabled={joiningId !== null}
+                  >
+                    <View style={styles.peerIcon}>
+                      <Text style={styles.peerIconText}>{hostName.charAt(0).toUpperCase()}</Text>
+                    </View>
+                    <View style={styles.peerInfo}>
+                      <Text style={styles.peerName}>{hostName}</Text>
+                      <Text style={styles.peerHint}>tap to connect</Text>
+                    </View>
+                    {joiningId === p.id && (
+                      <ActivityIndicator size="small" color={warmColors.accentB} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </>
+      )}
+
+      <View style={styles.gap20} />
+      <Text style={styles.noteText}>
+        Your side of things stays with you — your agent will ask you about it next.
+      </Text>
+
+      <View style={styles.gap28} />
       <WarmButton label="this isn't for me" variant="ghost" onPress={onDecline} />
 
       <View style={styles.gap40} />
@@ -129,43 +151,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: warmColors.textSecondary,
     lineHeight: 14 * 1.6,
-  },
-  viewfinder: {
-    height: 90,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: warmColors.border,
-    borderStyle: 'dashed',
-    backgroundColor: warmColors.bgSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  scanIcon: { alignItems: 'center' },
-  scanIconText: { fontSize: 28, color: warmColors.shared },
-  scanHint: { fontSize: 12, color: warmColors.textTertiary },
-  contextCard: {
-    backgroundColor: warmColors.accentBLight,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 0.5,
-    borderColor: warmColors.accentB + '40',
-  },
-  contextLabel: {
-    fontSize: 11,
-    color: warmColors.accentB,
-    fontWeight: '500',
-    textTransform: 'uppercase',
-    letterSpacing: 0.44,
-  },
-  contextBody: {
-    fontSize: 14,
-    color: warmColors.textPrimary,
-    lineHeight: 14 * 1.6,
-  },
-  contextEmphasis: {
-    color: warmColors.accentB,
-    fontWeight: '500',
   },
   noteText: {
     fontSize: 12,
@@ -189,6 +174,48 @@ const styles = StyleSheet.create({
     color: warmColors.textPrimary,
     height: 44,
   },
+  scanningRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  scanningText: { fontSize: 13, color: warmColors.textSecondary },
+  emptyPeers: {
+    paddingVertical: 24,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 13,
+    color: warmColors.textTertiary,
+    textAlign: 'center',
+    lineHeight: 13 * 1.6,
+  },
+  peerList: { gap: 8, marginTop: 12 },
+  peerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: warmColors.bgSecondary,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 0.5,
+    borderColor: warmColors.borderMedium,
+  },
+  peerRowActive: { borderColor: warmColors.accentB },
+  peerIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: warmColors.accentBLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  peerIconText: { fontSize: 16, color: warmColors.accentB, fontWeight: '600' },
+  peerInfo: { flex: 1 },
+  peerName: { fontSize: 14, color: warmColors.textPrimary, fontWeight: '500' },
+  peerHint: { fontSize: 11, color: warmColors.textTertiary, marginTop: 2 },
   gap6: { height: 6 },
   gap8: { height: 8 },
   gap10: { height: 10 },

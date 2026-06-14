@@ -20,4 +20,12 @@ config.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, 'node_modules'),
 ];
 
+// Stub out llama.rn for the Between Us UI demo build
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === 'llama.rn' || moduleName === 'react-native-device-agent') {
+    return { type: 'empty' };
+  }
+  return context.resolveRequest(context, moduleName, platform);
+};
+
 module.exports = config;

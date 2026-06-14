@@ -15,10 +15,13 @@ import { warmColors } from '../warmColors';
 import { Wordmark } from '../components/Wordmark';
 import { PhasePill } from '../components/PhasePill';
 import { WarmButton } from '../components/WarmButton';
-import type { IntakeAnswer } from '../types';
+import type { IntakeAnswer, SessionContext } from '../types';
+import type { BetweenUsAgent } from '../agent/BetweenUsAgent';
 
 interface Props {
   onComplete: (answers: IntakeAnswer) => void;
+  agent?: BetweenUsAgent;
+  sessionCtx?: SessionContext | null;
 }
 
 interface Message {
@@ -27,7 +30,8 @@ interface Message {
   text: string;
 }
 
-const AGENT_QUESTIONS = [
+// Fallback questions used when agent is not yet loaded
+const FALLBACK_QUESTIONS = [
   "What would feel like a good outcome for you?",
   "Is there anything you'd find really hard to agree to?",
   "How much wiggle room do you have here — or is this pretty fixed for you?",
@@ -129,9 +133,9 @@ const micStyles = StyleSheet.create({
   label: { fontSize: 12, color: warmColors.textSecondary },
 });
 
-export function Screen1({ onComplete }: Props) {
+export function Screen1({ onComplete, agent, sessionCtx }: Props) {
   const [messages, setMessages] = useState<Message[]>([
-    { id: '0', role: 'agent', text: AGENT_QUESTIONS[0] },
+    { id: '0', role: 'agent', text: FALLBACK_QUESTIONS[0] },
   ]);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Partial<IntakeAnswer>>({});
@@ -139,6 +143,8 @@ export function Screen1({ onComplete }: Props) {
   const [micActive, setMicActive] = useState(false);
   const [showTextInput, setShowTextInput] = useState(false);
   const [allDone, setAllDone] = useState(false);
+  const [agentTyping, setAgentTyping] = useState(false);
+  const qaHistory = useRef<{ question: string; answer: string }[]>([]);
 
   const readyOpacity = useRef(new Animated.Value(0)).current;
   const lastBubbleOpacity = useRef(new Animated.Value(1)).current;
@@ -147,7 +153,15 @@ export function Screen1({ onComplete }: Props) {
 
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
-  }, [messages]);
+  }, [messages, agentTyping]);
+
+  // Replace first question with agent-generated one if available
+  useEffect(() => {
+    if (!agent?.ready || !sessionCtx) return;
+    agent.getFirstQuestion(sessionCtx.name).then((q) => {
+      setMessages([{ id: '0', role: 'agent', text: q }]);
+    });
+  }, []);
 
   useEffect(() => {
     if (allDone) {
@@ -160,30 +174,35 @@ export function Screen1({ onComplete }: Props) {
     }
   }, [allDone]);
 
-  const submitAnswer = (text: string) => {
+  const submitAnswer = async (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed || agentTyping) return;
 
-    const userMsg: Message = {
-      id: `u${questionIndex}`,
-      role: 'user',
-      text: trimmed,
-    };
+    const currentQuestion = messages.filter((m) => m.role === 'agent').slice(-1)[0]?.text ?? '';
+    const userMsg: Message = { id: `u${questionIndex}`, role: 'user', text: trimmed };
 
     const newAnswers = { ...answers, [ANSWER_KEYS[questionIndex]]: trimmed };
     setAnswers(newAnswers);
     setInput('');
 
+    qaHistory.current = [...qaHistory.current, { question: currentQuestion, answer: trimmed }];
+
     const nextIndex = questionIndex + 1;
 
-    if (nextIndex < AGENT_QUESTIONS.length) {
-      const agentMsg: Message = {
-        id: `a${nextIndex}`,
-        role: 'agent',
-        text: AGENT_QUESTIONS[nextIndex],
-      };
-      setMessages((prev) => [...prev, userMsg, agentMsg]);
+    if (nextIndex < ANSWER_KEYS.length) {
+      setMessages((prev) => [...prev, userMsg]);
+      setAgentTyping(true);
+
+      let nextQuestion: string | null = null;
+      if (agent?.ready && sessionCtx) {
+        nextQuestion = await agent.getFollowUpQuestion(sessionCtx.name, qaHistory.current);
+      }
+      nextQuestion = nextQuestion ?? FALLBACK_QUESTIONS[nextIndex];
+
+      const agentMsg: Message = { id: `a${nextIndex}`, role: 'agent', text: nextQuestion };
+      setMessages((prev) => [...prev, agentMsg]);
       setQuestionIndex(nextIndex);
+      setAgentTyping(false);
     } else {
       setMessages((prev) => [...prev, userMsg]);
       setAllDone(true);
@@ -211,7 +230,7 @@ export function Screen1({ onComplete }: Props) {
         <View style={styles.gap8} />
         <PhasePill label="just between you and your agent" tone="caramel" />
         <View style={styles.gap12} />
-        <ProgressDots total={AGENT_QUESTIONS.length} current={questionIndex + (allDone ? 1 : 0)} />
+        <ProgressDots total={ANSWER_KEYS.length} current={questionIndex + (allDone ? 1 : 0)} />
       </View>
 
       <KeyboardAvoidingView
@@ -245,6 +264,14 @@ export function Screen1({ onComplete }: Props) {
               </Animated.View>
             );
           })}
+
+          {agentTyping && (
+            <View style={[styles.bubbleWrapper, styles.agentWrapper]}>
+              <View style={[styles.bubble, styles.agentBubble]}>
+                <Text style={[styles.bubbleText, styles.agentText]}>…</Text>
+              </View>
+            </View>
+          )}
 
           {allDone && (
             <View style={styles.holdMessage}>

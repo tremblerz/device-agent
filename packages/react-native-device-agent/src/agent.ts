@@ -4,6 +4,7 @@ import type {
   AgentEvent,
   AgentEventHandler,
   ChatMessage,
+  ToolSpec,
   ToolContext,
 } from './types';
 
@@ -15,6 +16,10 @@ export interface AgentOptions {
   /** Safety cap on tool-call/think iterations per run. Default 8. */
   maxSteps?: number;
   temperature?: number;
+  /** Tokens reserved for the model's reply (also the per-turn n_predict). Default 512. */
+  responseTokens?: number;
+  /** Extra tokens of headroom kept free below the context window. Default 128. */
+  contextMargin?: number;
 }
 
 export interface RunOptions {
@@ -41,6 +46,8 @@ export class Agent {
   private systemPrompt: string;
   private maxSteps: number;
   private temperature: number;
+  private responseTokens: number;
+  private contextMargin: number;
   private history: ChatMessage[] = [];
 
   constructor(options: AgentOptions) {
@@ -49,6 +56,8 @@ export class Agent {
     this.systemPrompt = options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
     this.maxSteps = options.maxSteps ?? 8;
     this.temperature = options.temperature ?? 0.7;
+    this.responseTokens = options.responseTokens ?? 512;
+    this.contextMargin = options.contextMargin ?? 128;
     this.history = [{ role: 'system', content: this.systemPrompt }];
   }
 
@@ -84,9 +93,13 @@ export class Agent {
       }
       emit({ type: 'step', index: step });
 
+      // Keep the conversation inside the context window before each call.
+      await this.fitContext(specs.length ? specs : undefined, emit);
+
       const { content, toolCalls } = await this.engine.chat(this.history, {
         tools: specs.length ? specs : undefined,
         temperature: this.temperature,
+        n_predict: this.responseTokens,
         onToken: (text) => emit({ type: 'token', text }),
       });
 
@@ -130,5 +143,58 @@ export class Agent {
     const msg = `Reached maxSteps (${this.maxSteps}) without a final answer.`;
     emit({ type: 'error', error: msg });
     return msg;
+  }
+
+  /**
+   * Drop the oldest conversation rounds (never the system prompt or the latest
+   * turn) until the rendered prompt plus reserved reply tokens fits the model's
+   * context window. A cheap character-based pre-check skips the native token
+   * count entirely for short conversations, which is the common case.
+   */
+  private async fitContext(
+    specs: ToolSpec[] | undefined,
+    emit: (e: AgentEvent) => void,
+  ): Promise<void> {
+    const ctxSize = this.engine.contextSize;
+    if (!ctxSize) return; // unknown context size — nothing to enforce against
+    const budget = ctxSize - this.responseTokens - this.contextMargin;
+    if (budget <= 0) return;
+
+    // Rough estimate (~3.5 chars/token incl. tool specs); only measure exactly
+    // when we might be close, to avoid a native call on every short turn.
+    const specChars = specs ? JSON.stringify(specs).length : 0;
+    const roughTokens =
+      (this.history.reduce((n, m) => n + m.content.length, 0) + specChars) / 3.5;
+    if (roughTokens < budget * 0.7) return;
+
+    let tokens = await this.engine.countPromptTokens(this.history, specs);
+    let dropped = 0;
+    while (tokens > budget && this.dropOldestRound()) {
+      dropped++;
+      tokens = await this.engine.countPromptTokens(this.history, specs);
+    }
+    if (dropped > 0) {
+      emit({ type: 'context_trimmed', droppedMessages: dropped, promptTokens: tokens, budget });
+    }
+  }
+
+  /**
+   * Remove the oldest round: the first non-system message and any assistant/
+   * tool follow-ups up to the next user message. Returns false when only the
+   * system prompt and the most recent turn remain (nothing safe left to drop).
+   */
+  private dropOldestRound(): boolean {
+    // Keep system (0) plus at least one more message (the current turn).
+    if (this.history.length <= 2) return false;
+    let removed = 0;
+    // Remove from index 1 until the next user message starts a new round,
+    // but stop before emptying down to [system, lastMessage].
+    while (this.history.length > 2) {
+      this.history.splice(1, 1);
+      removed++;
+      const next = this.history[1];
+      if (next && next.role === 'user') break;
+    }
+    return removed > 0;
   }
 }
