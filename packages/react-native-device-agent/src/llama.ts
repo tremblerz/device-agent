@@ -5,7 +5,7 @@ import type { ChatMessage, ToolCall, ToolSpec } from './types';
 export interface LlamaLoadOptions {
   /** Absolute file path or `file://` URI to a .gguf model. */
   model: string;
-  /** Context window size (tokens). Default 4096. */
+  /** Context window size (tokens). Default 8192. */
   n_ctx?: number;
   /** Layers to offload to GPU (Metal/OpenCL). 99 = all. Default 99. */
   n_gpu_layers?: number;
@@ -39,9 +39,15 @@ export interface ChatResult {
  */
 export class LlamaEngine {
   private ctx: Awaited<ReturnType<typeof initLlama>> | null = null;
+  private nCtx = 0;
 
   get isLoaded(): boolean {
     return this.ctx !== null;
+  }
+
+  /** The context window (in tokens) this model was loaded with. */
+  get contextSize(): number {
+    return this.nCtx;
   }
 
   static async load(options: LlamaLoadOptions): Promise<LlamaEngine> {
@@ -52,13 +58,30 @@ export class LlamaEngine {
 
   async loadModel(options: LlamaLoadOptions): Promise<void> {
     if (this.ctx) await this.release();
+    this.nCtx = options.n_ctx ?? 8192;
     this.ctx = await initLlama({
       model: options.model,
-      n_ctx: options.n_ctx ?? 4096,
+      n_ctx: this.nCtx,
       n_gpu_layers: options.n_gpu_layers ?? 99,
       use_mlock: options.use_mlock ?? true,
       ...(options.extra ?? {}),
     });
+  }
+
+  /**
+   * Count the tokens the given messages will occupy once rendered through the
+   * model's chat template (including tool specs). Used by the agent loop to
+   * keep the conversation inside the context window.
+   */
+  async countPromptTokens(messages: ChatMessage[], tools?: ToolSpec[]): Promise<number> {
+    if (!this.ctx) throw new Error('Model not loaded. Call loadModel() first.');
+    const formatted: any = await this.ctx.getFormattedChat(messages as any, null, {
+      jinja: true,
+      ...(tools?.length ? { tools, add_generation_prompt: true } : {}),
+    });
+    const prompt: string = formatted?.prompt ?? '';
+    const { tokens } = await this.ctx.tokenize(prompt);
+    return tokens.length;
   }
 
   /**
@@ -94,6 +117,7 @@ export class LlamaEngine {
     if (this.ctx) {
       await this.ctx.release();
       this.ctx = null;
+      this.nCtx = 0;
     }
   }
 }

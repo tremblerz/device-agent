@@ -82,6 +82,7 @@ export type AgentEvent =
   | { type: 'tool_call'; call: ToolCall }
   | { type: 'tool_result'; callId: string; name: string; result: unknown; error?: string }
   | { type: 'step'; index: number }
+  | { type: 'context_trimmed'; droppedMessages: number; promptTokens: number; budget: number }
   | { type: 'final'; content: string }
   | { type: 'error'; error: string };
 
