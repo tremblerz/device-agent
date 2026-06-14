@@ -1,7 +1,3 @@
-import { BetweenUsApp } from './src/between-us/BetweenUsApp';
-
-const USE_BETWEEN_US = true;
-
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -20,8 +16,6 @@ import { MODEL } from './src/config';
 import { useAgent, type UIMessage } from './src/useAgent';
 
 export default function App() {
-  if (USE_BETWEEN_US) return <BetweenUsApp />;
-
   const { status, progress, error, messages, initialize, send } = useAgent();
   const [input, setInput] = useState('');
   const listRef = useRef<FlatList<UIMessage>>(null);
