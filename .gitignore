@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Builds
+dist/
+lib/
+build/
+*.tsbuildinfo
+
+# Native
+ios/Pods/
+ios/build/
+android/.gradle/
+android/build/
+android/app/build/
+*.xcworkspace/xcuserdata/
+
+# Expo
+.expo/
+.expo-shared/
+web-build/
+dist/
+
+# Models (large GGUF files — never commit)
+*.gguf
+models/
+
+# Logs / env / OS
+*.log
+.env
+.env.local
+.DS_Store
+
+# Editor
+.idea/
+.vscode/*
+!.vscode/extensions.json
