@@ -8,8 +8,12 @@
   "types": "src/index.ts",
   "files": [
     "src",
+    "android",
+    "ios",
     "lib",
-    "README.md"
+    "README.md",
+    "react-native-device-agent.podspec",
+    "react-native.config.js"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",

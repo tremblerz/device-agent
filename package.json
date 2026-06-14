@@ -12,9 +12,15 @@
     "typecheck": "tsc -b",
     "example": "npm run --workspace example",
     "ios": "npm run --workspace example ios",
-    "android": "npm run --workspace example android"
+    "android": "npm run --workspace example android",
+    "postinstall": "node scripts/patch-foojay-resolver.js"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "expo": "~56.0.0-preview.8",
+    "react": "19.2.3",
+    "react-native": "0.85.3"
   }
 }
