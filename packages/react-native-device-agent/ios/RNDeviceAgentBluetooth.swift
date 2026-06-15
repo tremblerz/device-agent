@@ -153,9 +153,7 @@ class RNDeviceAgentBluetooth: RCTEventEmitter, CBCentralManagerDelegate, CBPerip
     }
   }
 
-  override func methodQueue() -> DispatchQueue {
-    .main
-  }
+  @objc static func requiresMainQueueSetup() -> Bool { false }
 
   func centralManagerDidUpdateState(_ central: CBCentralManager) {
     if central.state == .poweredOn {
